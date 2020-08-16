@@ -1,3 +1,6 @@
+package com.dunnhumy.core
+
+
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.types.{DateType, StringType, StructField, StructType}
 import org.apache.spark.sql.{Row, SparkSession}
@@ -15,43 +18,41 @@ def main(args: Array[String]): Unit = {
     .getOrCreate()
 
   val destinationPath = args(0)
+  val database = args(1)
 
-  val sch = new StructType()
-    .add("timestamp", StringType)
-    .add("userid", StringType)
 
-  session.sqlContext.read.table("loginfo")
+  val sch = new StructType().add("timestamp", StringType).add("userid", StringType)
+
 
 
   val rdd = Seq(
-    Row("2018-01-01T11:00:00Z", "u1"),
-    Row("2018-01-01T11:10:00Z", "u1"),
-    Row("2018-01-01T11:20:00Z", "u1"),
-    Row("2018-01-01T13:50:00Z", "u1"),
-    Row("2018-01-01T14:40:00Z", "u1"),
-    Row("2018-01-01T15:30:00Z", "u1"),
-    Row("2018-01-01T16:20:00Z", "u1"),
-    Row("2018-01-01T16:50:00Z", "u1"),
-    Row("2018-01-01T11:00:00Z", "u1"),
-    Row("2018-01-01T12:10:00Z", "u2"),
-    Row("2018-01-01T13:00:00Z", "u2"),
-    Row("2018-01-01T13:50:00Z", "u2"),
-    Row("2018-01-01T14:40:00Z", "u2"),
-    Row("2018-01-01T15:30:00Z", "u2"),
-    Row("2018-01-01T16:20:00Z", "u2"),
-    Row("2018-01-01T16:50:00Z", "u2")
+    Row("2018-01-01 11:00:00", "u1"),
+    Row("2018-01-01 11:10:00", "u1"),
+    Row("2018-01-01 11:20:00", "u1"),
+    Row("2018-01-01 13:50:00", "u1"),
+    Row("2018-01-01 14:40:00", "u1"),
+    Row("2018-01-01 15:30:00", "u1"),
+    Row("2018-01-01 16:20:00", "u1"),
+    Row("2018-01-01 16:50:00", "u1"),
+    Row("2018-01-01 11:00:00", "u1"),
+    Row("2018-01-01 12:10:00", "u2"),
+    Row("2018-01-01 13:00:00", "u2"),
+    Row("2018-01-01 13:50:00", "u2"),
+    Row("2018-01-01 14:40:00", "u2"),
+    Row("2018-01-01 15:30:00", "u2"),
+    Row("2018-01-01 16:20:00", "u2"),
+    Row("2018-01-01 16:50:00", "u2")
   ).asJava
 
   val sampleData = session.sqlContext.createDataFrame(rdd, sch)
-  sampleData.write.mode("overwrite").saveAsTable("userdata")
-
-
-  val readData = session.sqlContext.table("userdata")
-
+//  sampleData.write.mode("overwrite").saveAsTable(database+".userdata")
+//
+//
+//  val readData = session.sqlContext.table(database+".userdata")
 
   val user = sampleData.withColumn("normalizedTime", unix_timestamp(col("timestamp")))
   val w = Window.partitionBy(col("userid")).orderBy(col("timestamp").asc_nulls_first)
-  val differ = user.withColumn("diff", col("normalizedTime") - lag(col("normalizedTime"), 1))
+  val differ = user.withColumn("diff", col("normalizedTime") - lag(col("normalizedTime"), 1).over(w))
   val data = differ.withColumn("timeDiff", when(col("diff").isNull || col("diff") >= 1800, 0L).
     otherwise(col("diff")))
 
@@ -67,7 +68,8 @@ def main(args: Array[String]): Unit = {
   }
 
   val groupDF = data.
-    groupBy("user_id").agg(
+    groupBy("user" +
+      "id").agg(
     collect_list(col("timestamp")).as("timestamp_list"), collect_list(col("timeDiff")).as("timeDiff_list")
   )
 
@@ -78,15 +80,18 @@ def main(args: Array[String]): Unit = {
   val finalDF = explodedDF.select(col("userid"), col("sessionid._1").as("timestamp"), col("sessionid._2").as("usersessionid"))
 
 
-  val dateDF = finalDF.withColumn("datecolumn", col("timestamp").cast(DateType))
+val sessionperday=  finalDF.withColumn("datecolumn", col("timestamp").cast(DateType)).
+    withColumn("sessionperday", size(collect_set("usersessionid").over(Window.partitionBy("datecolumn"))))
 
 
-  dateDF.withColumn("sessionperday", countDistinct("usersessionid").over(Window.partitionBy("dateColumn")))
+val  userinfoDF =differ.withColumn("datecolumn", col("timestamp").cast(DateType))
     .withColumn("usertimeperday", sum("diff").over(Window.partitionBy("datecolumn", "userid")))
     .withColumn("month", month(col("datecolumn")))
     .withColumn("usertimepermonth", sum("diff").over(Window.partitionBy("month", "userid")))
-    .write
-    .partitionBy("month", "datecolumn")
+
+ sessionperday.join(userinfoDF,Seq("userid", "timestamp"),"inner")
+  .write
+   .partitionBy("month", "datecolumn")
     .parquet(destinationPath)
 
 

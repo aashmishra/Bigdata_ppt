@@ -1,6 +1,3 @@
-package com.dunnhumy.core
-
-
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.types.{DateType, StringType, StructField, StructType}
 import org.apache.spark.sql.{Row, SparkSession}
@@ -84,15 +81,15 @@ val sessionperday=  finalDF.withColumn("datecolumn", col("timestamp").cast(DateT
     withColumn("sessionperday", size(collect_set("usersessionid").over(Window.partitionBy("datecolumn"))))
 
 
-val  userinfoDF =differ.withColumn("datecolumn", col("timestamp").cast(DateType))
-    .withColumn("usertimeperday", sum("diff").over(Window.partitionBy("datecolumn", "userid")))
-    .withColumn("month", month(col("datecolumn")))
-    .withColumn("usertimepermonth", sum("diff").over(Window.partitionBy("month", "userid")))
+val  userinfoDF =differ.withColumn("datecolumn", col("timestamp").cast(DateType)).
+    withColumn("usertimeperday", sum("diff").over(Window.partitionBy("datecolumn", "userid"))).
+    withColumn("month", month(col("datecolumn"))).
+    withColumn("usertimepermonth", sum("diff").over(Window.partitionBy("month", "userid")))
 
- sessionperday.join(userinfoDF,Seq("userid", "timestamp"),"inner")
-  .write
-   .partitionBy("month", "datecolumn")
-    .parquet(destinationPath)
+ sessionperday.join(userinfoDF,Seq("userid", "timestamp"),"inner").
+  write.
+   partitionBy("month", "datecolumn").
+    parquet(destinationPath)
 
 
 }

@@ -1,6 +1,3 @@
-package com.dunnhumy.core
-
-
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.types.{DateType, StringType, StructField, StructType}
 import org.apache.spark.sql.{Row, SparkSession}
@@ -87,12 +84,16 @@ val  userinfoDF =differ.withColumn("datecolumn", col("timestamp").cast(DateType)
     withColumn("yearmonth", year(col("datecolumn"))*100+month(col("datecolumn"))).
     withColumn("usertimepermonth", sum("diff").over(Window.partitionBy("yearmonth", "userid")))
 
- sessionperday.join(userinfoDF,Seq("userid", "timestamp"),"inner").
+ val beforewriteDF = sessionperday.drop("datecolumn").join(userinfoDF,Seq("userid", "timestamp"),"inner").
+   select("userid", "timestamp", "usersessionid", "sessionperday", "usertimeperday", "usertimepermonth",
+   "yearmonth", col("datecolumn").toString())
+
+
+  beforewriteDF.
   write.
+    mode("overwrite").
    partitionBy("yearmonth", "datecolumn").
     parquet(destinationPath)
-
-
 }
 
 
